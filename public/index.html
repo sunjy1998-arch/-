@@ -1,0 +1,266 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI 초등학교 퀴즈 마법사</title>
+<style>
+* { box-sizing: border-box; }
+body {
+  font-family: Arial, sans-serif;
+  background: #eef3ff;
+  margin: 0;
+  padding: 24px;
+  color: #172b4d;
+}
+.container {
+  max-width: 760px;
+  margin: auto;
+  background: white;
+  border-radius: 24px;
+  padding: 30px;
+  box-shadow: 0 8px 30px #20306018;
+}
+h1 { text-align: center; color: #315ee8; }
+.subtitle { text-align: center; color: #667; }
+label {
+  display: block;
+  margin-top: 20px;
+  font-weight: bold;
+}
+select, input {
+  width: 100%;
+  padding: 14px;
+  margin-top: 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  font-size: 16px;
+}
+button {
+  border: none;
+  border-radius: 12px;
+  padding: 14px;
+  font-size: 16px;
+  cursor: pointer;
+}
+.primary {
+  width: 100%;
+  background: #3568ec;
+  color: white;
+  font-weight: bold;
+  margin-top: 24px;
+}
+.primary:disabled { opacity: .5; cursor: wait; }
+.question {
+  padding: 20px;
+  margin-top: 22px;
+  background: #f7f9ff;
+  border-radius: 14px;
+}
+.option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: white;
+  border: 1px solid #d6def0;
+  margin-top: 10px;
+}
+.option.selected {
+  background: #dce7ff;
+  border: 2px solid #3568ec;
+}
+.explanation {
+  background: #e9f8ef;
+  padding: 14px;
+  margin-top: 12px;
+  border-radius: 10px;
+}
+#result {
+  margin-top: 25px;
+  text-align: center;
+  font-size: 24px;
+  font-weight: bold;
+}
+.error { color: #c62828; margin-top: 14px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🎓 AI 퀴즈 마법사</h1>
+  <p class="subtitle">
+    초등학생을 위한 맞춤형 AI 퀴즈!
+  </p>
+
+  <label for="grade">학년 선택</label>
+  <select id="grade">
+    <option value="3">3학년</option>
+    <option value="4">4학년</option>
+    <option value="5" selected>5학년</option>
+    <option value="6">6학년</option>
+  </select>
+
+  <label for="subject">과목 선택</label>
+  <select id="subject">
+    <option>국어</option>
+    <option>수학</option>
+    <option selected>사회</option>
+    <option>과학</option>
+    <option>도덕</option>
+    <option>실과</option>
+  </select>
+
+  <label for="topic">학습 주제</label>
+  <input id="topic" maxlength="100"
+    value="조선 시대의 생활"
+    placeholder="예: 평균과 가능성">
+
+  <button class="primary" id="generate"
+    onclick="generateQuiz()">
+    ✨ AI 퀴즈 5문제 생성하기
+  </button>
+
+  <p id="status" role="status"></p>
+  <div id="quiz"></div>
+  <div id="result" aria-live="polite"></div>
+</div>
+
+<script>
+let questions = [];
+let answers = [];
+let graded = false;
+
+async function generateQuiz() {
+  const button = document.getElementById("generate");
+  const status = document.getElementById("status");
+  const quiz = document.getElementById("quiz");
+  const result = document.getElementById("result");
+
+  const grade = document.getElementById("grade").value;
+  const subject = document.getElementById("subject").value;
+  const topic = document.getElementById("topic").value.trim();
+
+  if (!topic) {
+    status.textContent = "학습 주제를 입력해 주세요.";
+    return;
+  }
+
+  button.disabled = true;
+  status.textContent = "🤖 AI가 문제를 만들고 있어요...";
+  status.className = "";
+  quiz.replaceChildren();
+  result.textContent = "";
+  graded = false;
+
+  try {
+    const response = await fetch("/api/quiz", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ grade, subject, topic })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "서버 오류");
+    }
+
+    if (!Array.isArray(data.questions) ||
+        data.questions.length !== 5 ||
+        !data.questions.every(q =>
+          typeof q.question === "string" &&
+          Array.isArray(q.options) &&
+          q.options.length === 4 &&
+          q.options.every(o => typeof o === "string") &&
+          Number.isInteger(q.answer) &&
+          q.answer >= 1 && q.answer <= 4 &&
+          typeof q.explanation === "string"
+        )) {
+      throw new Error("문제 형식이 올바르지 않습니다.");
+    }
+
+    questions = data.questions;
+    answers = Array(questions.length).fill(null);
+    status.textContent = "퀴즈가 완성됐어요!";
+    renderQuiz();
+
+  } catch (error) {
+    status.textContent = "오류: " + error.message;
+    status.className = "error";
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function renderQuiz() {
+  const container = document.getElementById("quiz");
+  container.replaceChildren();
+
+  questions.forEach((q, i) => {
+    const card = document.createElement("div");
+    card.className = "question";
+
+    const title = document.createElement("h3");
+    title.textContent = `${i + 1}. ${q.question}`;
+    card.appendChild(title);
+
+    q.options.forEach((option, j) => {
+      const btn = document.createElement("button");
+      btn.className = "option";
+      btn.textContent = `${j + 1}. ${option}`;
+      btn.setAttribute("aria-pressed",
+        answers[i] === j + 1 ? "true" : "false");
+
+      if (answers[i] === j + 1) {
+        btn.classList.add("selected");
+      }
+
+      btn.disabled = graded;
+      btn.onclick = () => {
+        answers[i] = j + 1;
+        renderQuiz();
+      };
+      card.appendChild(btn);
+    });
+
+    if (graded) {
+      const explanation = document.createElement("div");
+      explanation.className = "explanation";
+      explanation.textContent =
+        `정답: ${q.answer}번 / ${q.explanation}`;
+      card.appendChild(explanation);
+    }
+
+    container.appendChild(card);
+  });
+
+  if (!graded) {
+    const submit = document.createElement("button");
+    submit.className = "primary";
+    submit.textContent = "📝 채점하기";
+    submit.onclick = checkAnswers;
+    container.appendChild(submit);
+  }
+}
+
+function checkAnswers() {
+  if (answers.some(a => a === null)) {
+    alert("모든 문제의 답을 선택해 주세요!");
+    return;
+  }
+
+  graded = true;
+  let score = 0;
+
+  questions.forEach((q, i) => {
+    if (answers[i] === q.answer) score++;
+  });
+
+  renderQuiz();
+
+  document.getElementById("result").textContent =
+    `🎉 최종 점수: ${score * 20}점 / 100점`;
+}
+</script>
+</body>
+</html>
